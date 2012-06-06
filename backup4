@@ -1,0 +1,128 @@
+#!/bin/sh
+#
+# incremental backup script, based on ideas from rsnapshot
+#
+# Copyright (c) 2012, Jochem Kossen
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+## settings
+PROFILE_DIR="/etc/backup4"
+RSYNC="/usr/bin/rsync -aHAX --delete-after --delete-excluded --ignore-errors"
+DEBUG=0
+## /settings
+
+cli_exec()
+{
+    if [ "$DEBUG" = "1" ]; then
+        echo "$*"
+    fi
+
+    $*
+}
+
+error()
+{
+    echo "ERROR: $1 Exiting." >&2
+    exit 1
+}
+
+if [ -z "$1" ]; then
+    error "No profile given."
+fi
+
+if [ ! -f "${PROFILE_DIR}/${1}" ]; then
+    error "profile does not exist."
+fi
+
+PROFILE="$1"
+
+. "${PROFILE_DIR}/${PROFILE}"
+
+if [ -z "$SOURCES" ]; then
+    error "SOURCES not defined in profile."
+fi
+
+if [ -z "$TARGET" ]; then
+    error "TARGET not defined in profile."
+fi
+
+if [ -z "$NR_OF_INCREMENTALS" ]; then
+    error "NR_OF_INCREMENTALS not defined in profile."
+fi
+
+rotate()
+{
+    T_TARGET="${TARGET}/${PROFILE}"
+
+    if [ ! -e "${T_TARGET}.0" ]; then
+        return 0
+    fi
+
+    CUR="$NR_OF_INCREMENTALS"
+    while [ $CUR -gt 0 ]; do
+        PREV=$(expr $CUR - 1)
+
+        if [ "$CUR" = "$NR_OF_INCREMENTALS" -a -e "${T_TARGET}.${PREV}" -a -e "${T_TARGET}.${CUR}" ]; then
+            cli_exec rm -fr "${T_TARGET}.${CUR}"
+        fi
+
+        if [ -e "${T_TARGET}.${PREV}" ]; then
+            cli_exec mv "${T_TARGET}.${PREV}" "${T_TARGET}.${CUR}"
+
+            if [ "$CUR" = "1" ];then
+                if [ ! -e "${T_TARGET}.0" ]; then
+                    # copy the previous backup to a fresh target directory using hard links
+                    cli_exec cp -al "${T_TARGET}.1" "${T_TARGET}.0"
+
+                    # update the modification time of the target directory to
+                    # make it clear when this backup was made
+                    cli_exec touch "${T_TARGET}.0"
+                else
+                    error "${T_TARGET}.0 still exists."
+                fi
+            fi
+        fi
+
+        CUR=$PREV
+    done
+}
+
+incremental()
+{
+    REXCLUDES=""
+    for exc in ${EXCLUDES}; do
+        REXCLUDES="--exclude=${exc} ${REXCLUDES}"
+    done
+
+    for SOURCE in $SOURCES; do
+        if [ ! -e "${TARGET}/${PROFILE}.0" ]; then
+            cli_exec mkdir -p "${TARGET}/${PROFILE}.0"
+        fi
+
+        cli_exec $RSYNC $REXCLUDES "${SOURCE}/" "${TARGET}/${PROFILE}.0${SOURCE}"
+    done
+}
+
+rotate
+incremental
+

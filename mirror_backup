@@ -1,0 +1,107 @@
+#!/bin/sh
+#
+# script to mirror a backup to a (external) disk device
+#
+# Copyright (c) 2012, Jochem Kossen
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+## settings
+# backup disk device
+DEV="/dev/disk/by-uuid/693737b3-a042-49a3-ad3e-ef61e67b73b2"
+
+# directory to backup
+SRC="/seagate/Backup"
+
+# target directory
+TRG="/backup"
+
+# mirroring command, expects $SRC as $1, $TRG as $2
+MIRROR_COMMAND="/usr/bin/rsync -aHAX --delete-after"
+
+# Command to flush the filesystem buffers
+SYNC_COMMAND="/bin/sync"
+
+# Path to log file
+LOGFILE="$TRG/mirror_backup_log"
+
+#
+## /settings
+
+# check if backup device is attached
+if [ ! -e "$DEV" ]; then
+    echo "ERROR: specified backup device does not exist" >&2
+    exit 1
+fi
+
+# check if source directory exists
+if [ ! -e "$SRC" ]; then
+    echo "ERROR: source directory does not exist" >&2
+    exit 1
+fi
+
+# check if target directory exists
+if [ ! -e "$TRG" ]; then
+    echo "ERROR: target directory does not exist" >&2
+    exit 1
+fi
+
+# only mount if $TRG was not mounted already. Shouldn't we use /proc/mounts?
+if [ ! -e "$TRG/lost+found" ]; then
+    mount $TRG
+    RET=$?
+
+    if [ $RET != 0 ]; then
+        echo -n "ERROR: mount failed with exit code " >&2
+        echo $RET >&2
+        exit 1
+    fi
+fi
+
+# check if source directory exists
+if [ ! -e "$SRC" ]; then
+    echo "ERROR: source directory does not exist" >&2
+    exit 1
+fi
+
+STARTDATE=$(date +"%Y%m%d%H%M")
+
+echo "$STARTDATE - starting sync $STARTDATE" >> "$LOGFILE"
+
+$MIRROR_COMMAND "$SRC" "$TRG" 2>&1 |tee -a "$LOGFILE"
+
+# just to be safe, flush the filesystem buffers a few times
+$SYNC_COMMAND 2>&1 |tee -a "$LOGFILE"
+$SYNC_COMMAND 2>&1 |tee -a "$LOGFILE"
+$SYNC_COMMAND 2>&1 |tee -a "$LOGFILE"
+
+ENDDATE=$(date +"%Y%m%d%H%M")
+echo "$ENDDATE - sync $STARTDATE done" >> "$LOGFILE"
+
+umount $TRG
+RET=$?
+
+if [ $RET != 0 ]; then
+    echo -n "ERROR: umount failed with exit code " >&2
+    echo $RET >&2
+    exit 1
+fi

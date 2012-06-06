@@ -1,0 +1,33 @@
+# profile file for backup4
+# usually the place for this is in /etc/backup4
+
+## settings
+
+# Which directories to back up
+SOURCES="/home /var /root /etc /seagate/Photos /seagate/Videos /seagate/Music /seagate/Music_Ivette"
+
+# Base directory where backups should be stored
+TARGET="/seagate/Backup/ostrea/incremental"
+
+# Nr of incrementals that you want to keep
+NR_OF_INCREMENTALS=30
+
+# Excludes are relative to the sources
+EXCLUDES="*~ *.[bB][aA][kK] \
+    *.[rR][pP][mM] \
+    */.mozilla/ \
+    */Downloads/ \
+    */.cache/ \
+    */tmp/ \
+    */.compiz \
+    /.cache/ \
+    /cache/ \
+    /tmp/ \
+    /log/ \
+    /lock/ \
+    /run/ \
+    /Movies/ \
+    /Series/ \
+    /SeagateBackup/"
+
+## /settings
